@@ -48,7 +48,10 @@ def version():
 
 
 def credentials_file(settings, key):
-    return Path(settings["credentialsPath"]) / settings[key]
+    """The file in credentialsPath (settings.json), else the repo's own credentials folder (git-ignored)."""
+    path = Path(settings["credentialsPath"]) / settings[key]
+    local = ROOT / "credentials" / settings[key]
+    return local if not path.exists() and local.exists() else path
 
 
 # ---------------------------------------------------------------- connection
@@ -277,6 +280,20 @@ def set_tag(conn, email_id, tag_id, action):
     else:
         raise ValueError(f"unknown action {action!r}")
     conn.commit()
+
+
+def queue_retag(conn, which):
+    """which = 'untagged' (emails with no tag at all) or 'all'. Returns how many are queued for the next tagging run."""
+    cur = conn.cursor()
+    if which == "all":
+        n = cur.execute("UPDATE emails SET tagged_at = NULL")
+    elif which == "untagged":
+        n = cur.execute("UPDATE emails e SET tagged_at = NULL WHERE NOT EXISTS "
+                        "(SELECT 1 FROM email_tags t WHERE t.email_id = e.id)")
+    else:
+        raise ValueError("retag must be 'untagged' or 'all'")
+    conn.commit()
+    return n
 
 
 def retag(conn, email_ids):

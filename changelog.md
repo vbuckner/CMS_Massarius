@@ -2,6 +2,12 @@
 
 Newest first. One entry per version (the `version:` line in steps.md).
 
+## v 0.0.3 (2026-11-27)
+- AnythingLLM tagging switched on: the API key file is found in the repo's own `credentials` folder as well as in
+  C:\dev\credentials. AnythingLLM's workspace `cms-tagger` was made by the code; about 5 s per email.
+- `python scan.py --retag untagged` (or `all`): tag emails again without reading Outlook; your own tags are kept.
+- Tagging prints progress every 25 emails when AnythingLLM is used.
+
 ## v 0.0.2 (2026-11-27)
 - Web page (`python server.py`, http://127.0.0.1:8770): title "CMS Massarius" with the version in smaller text and the
   info icon (white i, light blue circle, 1 px dark grey border, glows on hover, click toggles the info pop up).

@@ -5,6 +5,7 @@
     python scan.py --mailbox "Massarius | Billing" --mailbox "Massarius | Finance"
     python scan.py --no-tag                          # read only, no tagging
     python scan.py --tag-only                        # no Outlook: tag the emails not tagged yet
+    python scan.py --retag untagged                  # no Outlook: tag again the emails with no tag (or: all)
     python scan.py --dry-run                         # read and count, write nothing
     python scan.py --log logs/scan.log               # output to the log file (the scheduled task does this)
 
@@ -22,9 +23,11 @@ import tagger
 
 
 def run(args, settings):
-    if args.tag_only:
+    if args.tag_only or args.retag:
         conn = cms_db.connect(settings)
         cms_db.ensure_tables(conn)
+        if args.retag:
+            print(f"retag: {cms_db.queue_retag(conn, args.retag)} emails queued ({args.retag})")
         tagger.tag_new_emails(conn, settings, say=lambda text: print("  " + text))
         conn.close()
         print("tag only: done")
@@ -63,6 +66,8 @@ def main(argv=None):
     ap.add_argument("--mailbox", action="append", help="mailbox as Outlook names it; repeat for more (default: settings.json)")
     ap.add_argument("--no-tag", action="store_true", help="do not tag the new emails")
     ap.add_argument("--tag-only", action="store_true", help="no Outlook: only tag the emails not tagged yet")
+    ap.add_argument("--retag", choices=["untagged", "all"],
+                    help="no Outlook: tag again the emails with no tag, or all emails (your own tags are kept)")
     ap.add_argument("--dry-run", action="store_true", help="read and count only, write nothing")
     ap.add_argument("--verbose", action="store_true", help="progress per folder (names and counts only)")
     ap.add_argument("--log", help="append the output to this file (the scheduled task has no window)")

@@ -119,7 +119,10 @@ def tag_new_emails(conn, settings, say=print):
             say(f"tagging: AnythingLLM not used - {type(err).__name__}: {err} (rules only)")
             llm = None
     counts = {"rules": 0, "llm": 0, "llm_errors": 0}
-    for email in emails:
+    say(f"tagging: {len(emails)} emails to tag" + (" (AnythingLLM ~5 s each)" if llm else ""))
+    for n, email in enumerate(emails, 1):
+        if llm is not None and n % 25 == 0:
+            say(f"tagging: {n} of {len(emails)} done")
         proposals = rule_tags(email, tags)
         if llm is not None:
             try:

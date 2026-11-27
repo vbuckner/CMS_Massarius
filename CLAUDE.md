@@ -45,6 +45,8 @@ CMS thoughts for Massarius: an email scanner that stores Outlook mail in a local
   it again). source rules / llm / user.
 
 ## AnythingLLM
-Installed (desktop), LLM provider is its built-in local runner with Qwen3-8B. The tagger needs a Developer API key
-in `<credentialsPath>\anythingllm.json`: `{"url": "http://localhost:3001", "apiKey": "..."}`, which the user makes.
-Without it (or with AnythingLLM closed) the scan logs that and tags by rules only.
+Installed (desktop), LLM provider is its built-in local runner with Qwen3-8B, API on http://localhost:3001.
+The Developer API key file `anythingllm.json` is in the repo's git-ignored `credentials/` folder (credentials_file()
+looks in credentialsPath first, then there). Workspace `cms-tagger`. About 5 s per email (first call ~20 s).
+With AnythingLLM closed the scan logs that and tags by rules only.
+The server needs no restart for scan/tagger changes (scans run as a subprocess), only for server.py / cms_db.py.
