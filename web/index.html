@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CMS Massarius</title>
+<link rel="stylesheet" href="/web/style.css">
+</head>
+<body>
+<header>
+  <h1>CMS Massarius <span id="version" class="version"></span></h1>
+  <button id="info-btn" class="info-icon" type="button" aria-expanded="false" aria-controls="info-pop" title="About">i</button>
+  <div id="info-pop" class="info-pop" hidden>
+    <p>CMS Thoughts for Massarius, via email scanner.</p>
+    <p>Possibly a brain type interface.</p>
+    <p>Can run agents.</p>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button data-tab="emails" class="active">Emails</button>
+  <button data-tab="tags">Tags</button>
+  <button data-tab="scan">Scan</button>
+</nav>
+
+<main>
+  <!-- Emails -->
+  <section id="tab-emails" class="tab">
+    <div class="filters">
+      <select id="f-account"><option value="">All accounts</option></select>
+      <select id="f-tag"><option value="">All tags</option><option value="none">No tag</option></select>
+      <input id="f-search" type="search" placeholder="Search subject or sender">
+      <span id="e-count" class="muted"></span>
+    </div>
+    <div class="split">
+      <div class="list-wrap">
+        <table class="list">
+          <thead><tr><th>Received</th><th>Account</th><th>From</th><th>Subject</th><th>Tags</th></tr></thead>
+          <tbody id="e-rows"></tbody>
+        </table>
+        <div class="pager"><button id="e-prev">&larr; Newer</button><button id="e-next">Older &rarr;</button></div>
+      </div>
+      <aside id="detail" class="detail" hidden></aside>
+    </div>
+  </section>
+
+  <!-- Tags -->
+  <section id="tab-tags" class="tab" hidden>
+    <p class="muted">The scan tags new emails with these rules, then asks AnythingLLM (local Qwen) to pick from the same list.
+      Sender patterns: part of the sender address, one per line. Keywords: looked for in the subject, one per line.</p>
+    <table class="list tags-table">
+      <thead><tr><th>Tag</th><th>Description</th><th>Sender patterns</th><th>Subject keywords</th><th>Order</th><th>Active</th><th>Emails</th><th></th></tr></thead>
+      <tbody id="t-rows"></tbody>
+    </table>
+    <button id="t-add">Add a tag</button>
+  </section>
+
+  <!-- Scan -->
+  <section id="tab-scan" class="tab" hidden>
+    <div class="scan-form">
+      <fieldset><legend>Mailboxes</legend><div id="s-boxes"></div></fieldset>
+      <label>Days back <input id="s-days" type="number" min="1" max="365" value="1"></label>
+      <label><input id="s-tag" type="checkbox" checked> Tag the new emails</label>
+      <div class="buttons">
+        <button id="s-run" class="primary">Scan now</button>
+        <button id="s-tagnow" title="Tags every email that has no tags yet, without reading Outlook">Tag untagged emails</button>
+      </div>
+      <p class="muted">The scheduled task also scans every day (scripts/schedule_scan.ps1). Emails already stored are refreshed,
+        and tags you set or rejected are kept.</p>
+    </div>
+    <h3>Log <span id="s-state" class="muted"></span></h3>
+    <pre id="s-log" class="log"></pre>
+  </section>
+</main>
+<script src="/web/app.js"></script>
+</body>
+</html>

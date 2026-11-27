@@ -1,0 +1,13 @@
+{
+  "port": 8770,
+  "credentialsPath": "C:\\dev\\credentials",
+  "mysqlCredentialsFile": "mysql.json",
+  "anythingllmCredentialsFile": "anythingllm.json",
+  "database": "cms_db",
+  "mailboxes": ["vincent@massarius.com", "Massarius | Billing", "Massarius | Finance"],
+  "days": 1,
+  "scheduleTimes": ["09:00", "17:00"],
+  "llmTagging": true,
+  "anythingllmWorkspace": "cms-tagger",
+  "llmBodyChars": 2000
+}
