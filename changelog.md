@@ -2,6 +2,25 @@
 
 Newest first. One entry per version (the `version:` line in steps.md).
 
+## v 0.0.4 (2026-11-27)
+- Menu: order Tags, Scan, Emails (Emails still opens first). Full 3D buttons in light purple with a lighter band
+  (gradient leaning 75 degrees from the x axis, about 24 px in from the left; `--tab-angle` / `--tab-band` in
+  style.css); the selected one is sunken. The tabs only show / hide their sections (nothing is reloaded).
+- Emails tab: a "Scan summary" box at the top - pick any scan of the last two weeks and its summary loads in a
+  scrollable box (max 400 px): accounts, tags given, emails AnythingLLM flags as important (click one to see it),
+  notes and errors. The email list stays hidden until you use a filter, search, or "Show emails".
+  New filter "! Important (AnythingLLM)"; important emails show a red "!" and the reason.
+- Tags tab: loaded once, so switching tabs keeps unsaved edits. Saved rows light green, changed / new rows orange,
+  Cancel removes a new row or undoes the changes, a second "Add a tag" button at the top (jumps to the new row).
+- Scan tab: the log can be folded away.
+- Every run is recorded: new tables `scan_info` (date/time, who started it, mode, days, mailboxes, counts, status)
+  and `scan_details` (rows per account, per tag, important emails, notes, errors). `emails` gets `scan_id`
+  (the scan that first stored it), `important` and `important_why`.
+- Experiment: AnythingLLM is asked in the same call whether an email looks important (needs action soon) and why.
+  Only new / re-tagged emails get this; the 1,165 already stored are not asked until a `--retag all`.
+- The scheduled task now passes `--source schedule`; runs from the page are `page`, from cmd `cli`.
+- `CMS_PORT` lets a second copy of the page run next to yours (used to check the page on the test data).
+
 ## v 0.0.3 (2026-11-27)
 - AnythingLLM tagging switched on: the API key file is found in the repo's own `credentials` folder as well as in
   C:\dev\credentials. AnythingLLM's workspace `cms-tagger` was made by the code; about 5 s per email.

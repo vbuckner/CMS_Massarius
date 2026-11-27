@@ -32,7 +32,7 @@ class CmsTests(unittest.TestCase):
         cls.settings = dict(cms_db.read_settings(), database=TEST_DB, llmTagging=False)
         cls.conn = cms_db.connect(cls.settings)
         cur = cls.conn.cursor()
-        for t in ("email_tags", "emails", "lookup_tags"):
+        for t in ("scan_details", "scan_info", "email_tags", "emails", "lookup_tags"):
             cur.execute(f"DROP TABLE IF EXISTS {t}")
         cms_db.ensure_tables(cls.conn)
 
@@ -94,12 +94,46 @@ class CmsTests(unittest.TestCase):
 
     def test_5_llm_reply_parsing(self):
         class FakeLLM:
+            def __init__(self, reply):
+                self.reply = reply
             def ask(self, system, user):
-                return '<think>hmm</think>\n{"tags": ["SSP", "nope", "client"]}'
+                return self.reply
         tags = cms_db.active_tags(self.conn)
-        got = sorted(t for t, _s, _r in tagger.llm_tags(FakeLLM(), fake(9), tags, 100))
         ids = {t["tag"]: t["id"] for t in tags}
-        self.assertEqual(got, sorted([ids["ssp"], ids["client"]]))
+        got, important, why = tagger.llm_tags(FakeLLM('<think>hmm</think>\n{"tags": ["SSP", "nope", "client"], '
+                                                      '"important": true, "why": "payment overdue"}'), fake(9), tags, 100)
+        self.assertEqual(sorted(t for t, _s, _r in got), sorted([ids["ssp"], ids["client"]]))
+        self.assertEqual((important, why), (True, "payment overdue"))
+        got, important, why = tagger.llm_tags(FakeLLM('{"tags": [], "important": "false", "why": "x"}'), fake(9), tags, 100)
+        self.assertEqual((got, important, why), ([], False, ""))
+        got, important, why = tagger.llm_tags(FakeLLM("sorry, no json"), fake(9), tags, 100)
+        self.assertEqual((got, important), ([], None))
+
+    def test_6_scan_summary_and_important(self):
+        scan_id = cms_db.start_scan_info(self.conn, "cli", "scan", 1, ["Test | Box"], True)
+        rows = [fake(20, subject="Contract to sign", scan_id=scan_id), fake(21, scan_id=scan_id)]
+        self.assertEqual(cms_db.save_emails(self.conn, rows), (2, 0))
+        cur = self.conn.cursor()
+        cur.execute("SELECT id FROM emails WHERE message_id = '<fake-20@example.test>'")
+        email_id = cur.fetchone()[0]
+        cms_db.save_auto_tags(self.conn, email_id, [], True, "contract waiting for a signature")
+        cms_db.add_scan_detail(self.conn, scan_id, "account", "Test | Box", 2, "2 read: 2 new, 0 refreshed")
+        cms_db.add_scan_detail(self.conn, scan_id, "important", None, None, "contract waiting for a signature", email_id)
+        cms_db.finish_scan_info(self.conn, scan_id, "ok", 2, 2, 2, 1)
+        # a rescan does not move an email to the later scan
+        later = cms_db.start_scan_info(self.conn, "page", "scan", 1, ["Test | Box"], True)
+        rows[0]["scan_id"] = later
+        cms_db.save_emails(self.conn, rows[:1])
+        self.assertEqual(cms_db.get_email(self.conn, email_id)["scan_id"], scan_id)
+        scans = cms_db.list_scans(self.conn)
+        self.assertEqual([s["id"] for s in scans][-1], scan_id)
+        scan = cms_db.get_scan(self.conn, scan_id)
+        self.assertEqual((scan["status"], scan["emails_new"], scan["important"]), ("ok", 2, 1))
+        imp = [d for d in scan["details"] if d["kind"] == "important"][0]
+        self.assertEqual((imp["email_id"], imp["subject"]), (email_id, "Contract to sign"))
+        total, listed = cms_db.list_emails(self.conn, tag_id="important")
+        self.assertEqual((total, listed[0]["important_why"]), (1, "contract waiting for a signature"))
+        cms_db.finish_scan_info(self.conn, later, "ok")
 
 
 if __name__ == "__main__":

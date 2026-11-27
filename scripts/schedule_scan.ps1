@@ -13,7 +13,7 @@ $Log      = Join-Path $Root "logs\scan.log"
 # The old task from the claude_playground test folder is replaced by this one.
 Unregister-ScheduledTask -TaskName "Massarius CMS email reader" -Confirm:$false -ErrorAction SilentlyContinue
 
-$action   = New-ScheduledTaskAction -Execute $Pythonw -Argument "`"$Script`" --log `"$Log`"" -WorkingDirectory $Root
+$action   = New-ScheduledTaskAction -Execute $Pythonw -Argument "`"$Script`" --source schedule --log `"$Log`"" -WorkingDirectory $Root
 $triggers = $Settings.scheduleTimes | ForEach-Object { New-ScheduledTaskTrigger -Daily -At $_ }
 # Runs as you, only while you are logged on (it needs your Outlook session).
 # A run missed because the PC was off or asleep starts as soon as it is back.

@@ -18,7 +18,7 @@ restrictions
   - To reclassify/tag all emails -- note takes approx 2 hours, may be more (so plug in)
     - python scan.py --retag all --log logs/scan.log
 
-version: v 0.0.3
+version: v 0.0.4
 
 - ✓ info icon
   - ✓ ccs 
@@ -40,13 +40,13 @@ version: v 0.0.3
         can run agents
   
   - ✓ tabs
-    - can these by async, one div hidden another opened?
-    - move emails section to after scan section in the menu
-    - make menu items full buttons via css
-      - 3d standing out unless its selected, then sunken
-      - light purple colouring
-        - is it possible to fade slightly lighter, via gradient, and back
-        - put the gradient at a 75 degree angle from x axis, approx 24px in from the left (try and i will advise if its needs changing with more lines)
+    - ✓ can these by async, one div hidden another opened?
+    - ✓ move emails section to after scan section in the menu
+    - ✓ make menu items full buttons via css
+      - ✓ 3d standing out unless its selected, then sunken
+      - ✓ light purple colouring
+        - ✓ is it possible to fade slightly lighter, via gradient, and back
+        - ✓ put the gradient at a 75 degree angle from x axis, approx 24px in from the left (try and i will advise if its needs changing with more lines)
 
     - ✓ Emails
       - ✓ filters: account, tag (or no tag), search subject / sender
@@ -59,50 +59,72 @@ version: v 0.0.3
         - ✓ add a tag from the list
       - ✓ open in outlook button (outlook marks the email as read)
       - ✓ tag again button
-      - default show the filters, do not show emails
-      - have a div for summary
-        - choose from the last two weeks
-        - list all those scans in a combo
-        - on select
-          - render the information in an async div within the div for summary
-            - max height 400px
-            - scrollable
-
-    - ✓ Tags
-      - ✓ edit tag, description, sender patterns, subject keywords, order, active
-      - ✓ add a tag
-      - ✓ number of emails per tag
-      - only problem I had was swapping to the other tab and back lost the entered yet not saved details. async should fix that
-      - option to cancel and remove the line not yet saved
-      - colour the saved lines in very light green
-      - and adjustments/dirtying the row, change to orange, inclduing the new row.
-      - have a second add tag button at the top -> jumps to the bottom and creates like the current button does
+      - ✓ default show the filters, do not show emails
+      - ✓ have a div for summary
+        - ✓ choose from the last two weeks
+        - ✓ list all those scans in a combo
+        - ✓ on select
+          - ✓ render the information in an async div within the div for summary
+            - ✓ max height 400px
+            - ✓ scrollable
 
     - ✓ Scan
       - ✓ pick mailboxes (from config/settings.json), days back, tag the new emails
       - ✓ scan now
       - ✓ tag untagged emails
       - ✓ log of the scans
-        - allow collaspable
+        - ✓ allow collaspable
+      - button --> clear log
+        - bin icon
 
-- ✓ email scanner (scan.py)
-  - ✓ mailboxes: vincent@massarius.com, Massarius | Billing, Massarius | Finance - read only
-  - ✓ inbox with its sub folders + sent items, last x days
-  - ✓ my_sql cms_db
-    - ✓ emails: account, from, to, cc, sent on, received, subject, body, attachments, folder, outlook link
-    - ✓ lookup_tags: internal, ssp, client, dashboard, invoice, newsletter + their rules
-    - ✓ email_tags: auto (the scan's) / manual (yours) / rejected
-  - ✓ emails already stored are refreshed, their tags are kept
-  - ✓ auto tagging: rules first, then anything llm (qwen, local)
-  - ✓ open an email from a link: http://127.0.0.1:8770/open/<id>
-  - ✓ scheduled task "CMS Massarius scan": 09:00 and 17:00, 1 day back
-  - ✓ python scan.py --retag untagged (or all): tag again without reading outlook
-  - on scan
-    - produce a summary of the last run (usually day)
-      - hold in a table - scan info
-        - scan date/time
-        - filters (number of days etc)
-      - hold in a table - scan details
-        - summary line(s)/row(s)
-      - not sure how yet, but flag those that sound important to appear in the summary
-        - experiment with anything llm and a request may be.. not too important yet
+
+  - Settings
+    - use a cog icon in a button
+    - right align the button
+    - sub menu item of the Tags
+      - ✓ Tags
+        - ✓ edit tag, description, sender patterns, subject keywords, order, active
+        - ✓ add a tag
+        - ✓ number of emails per tag
+        - ✓ only problem I had was swapping to the other tab and back lost the entered yet not saved details. async should fix that
+        - ✓ option to cancel and remove the line not yet saved
+        - ✓ colour the saved lines in very light green
+        - ✓ and adjustments/dirtying the row, change to orange, inclduing the new row.
+        - ✓ have a second add tag button at the top -> jumps to the bottom and creates like the current button does
+
+
+- Actions
+  - ✓ email scanner (scan.py)
+    - ✓ mailboxes: vincent@massarius.com, Massarius | Billing, Massarius | Finance - read only
+    - ✓ inbox with its sub folders + sent items, last x days
+    - ✓ my_sql cms_db
+      - ✓ emails: account, from, to, cc, sent on, received, subject, body, attachments, folder, outlook link
+      - ✓ lookup_tags: internal, ssp, client, dashboard, invoice, newsletter + their rules
+      - ✓ email_tags: auto (the scan's) / manual (yours) / rejected
+    - ✓ emails already stored are refreshed, their tags are kept
+    - ✓ auto tagging: rules first, then anything llm (qwen, local)
+    - ✓ open an email from a link: http://127.0.0.1:8770/open/<id>
+    - ✓ scheduled task "CMS Massarius scan": 09:00 and 17:00, 1 day back
+    - ✓ python scan.py --retag untagged (or all): tag again without reading outlook
+    - ✓ on scan
+      - ✓ produce a summary of the last run (usually day)
+        - ✓ hold in a table - scan info
+          - ✓ scan date/time
+          - ✓ filters (number of days etc)
+        - ✓ hold in a table - scan details
+          - ✓ summary line(s)/row(s)
+        - ✓ not sure how yet, but flag those that sound important to appear in the summary
+          - ✓ experiment with anything llm and a request may be.. not too important yet
+        - catch any errors
+          - summarise the error
+            - collapse the error details - clickable to open and see
+            - highlight in red on the log
+          - suggest action(s) to clear up
+            - if mysql isnt runnging - suggest running
+            - if outlook library is erroring, etc
+
+    - when scanning, next to log collapsable text -> add an css that is spinning balls that change through the rainbox colours as they circle. 
+      - hide once complete
+      - auto swap to emails tab
+  - Scan -> clear log button
+    - clears the div with the log information

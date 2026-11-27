@@ -11,10 +11,13 @@ Standard library only (plus the MySQL driver and pywin32 the other modules need)
   POST /api/scan                 {"mailboxes": [...], "days": n, "tag": true}  starts scan.py
   GET  /api/scan                 is a scan running + the end of logs/scan.log
   POST /api/tag-now              runs the tagging only (scan.py with no mailboxes)
+  GET  /api/scans?days=14        the scans of the last 14 days (scan_info)
+  GET  /api/scans/<id>           one scan with its summary rows (scan_details)
   GET  /open/<id>                opens that email in Outlook (a link you can use anywhere on this PC)
 """
 import json
 import mimetypes
+import os
 import subprocess
 import sys
 import threading
@@ -49,7 +52,8 @@ def start_scan(extra_args):
         if scan_running():
             raise RuntimeError("a scan is already running")
         LOG.parent.mkdir(parents=True, exist_ok=True)
-        _scan["proc"] = subprocess.Popen([sys.executable, str(cms_db.ROOT / "scan.py"), "--log", str(LOG)] + extra_args,
+        _scan["proc"] = subprocess.Popen([sys.executable, str(cms_db.ROOT / "scan.py"), "--log", str(LOG),
+                                          "--source", "page"] + extra_args,
                                          cwd=str(cms_db.ROOT), creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
 
@@ -125,6 +129,11 @@ class Handler(BaseHTTPRequestHandler):
                     return self.ok(email) if email else self.fail(404, "no such email")
                 if parts[1:] == ["tags"]:
                     return self.ok(cms_db.list_tags(conn))
+                if parts[1:] == ["scans"]:
+                    return self.ok(cms_db.list_scans(conn, int(query.get("days", 14))))
+                if len(parts) == 3 and parts[1] == "scans":
+                    scan = cms_db.get_scan(conn, int(parts[2]))
+                    return self.ok(scan) if scan else self.fail(404, "no such scan")
             finally:
                 conn.close()
             return self.fail(404, "not found")
@@ -210,7 +219,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     settings = cms_db.read_settings()
-    port = int(settings["port"])
+    port = int(os.environ.get("CMS_PORT") or settings["port"])     # CMS_PORT: a second copy, e.g. on the test data
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     print(f"CMS Massarius {cms_db.version()} on http://127.0.0.1:{port}  (Ctrl+C to stop)")
     try:

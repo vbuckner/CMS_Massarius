@@ -8,8 +8,11 @@
     python scan.py --retag untagged                  # no Outlook: tag again the emails with no tag (or: all)
     python scan.py --dry-run                         # read and count, write nothing
     python scan.py --log logs/scan.log               # output to the log file (the scheduled task does this)
+    python scan.py --source schedule                 # who started it: schedule, page or cli (default)
 
 Emails already in the table are refreshed in place (same row id), so their tags stay.
+Every run (not a dry run) is recorded in scan_info, with its summary rows in scan_details: per account,
+per tag, the emails AnythingLLM thinks are important, and errors. The page shows them on the Emails tab.
 Only counts are printed: no subjects, senders or bodies.
 """
 import argparse
@@ -22,39 +25,91 @@ import outlook_reader
 import tagger
 
 
-def run(args, settings):
-    if args.tag_only or args.retag:
-        conn = cms_db.connect(settings)
-        cms_db.ensure_tables(conn)
+def say(text):
+    print("  " + text, flush=True)
+
+
+def record_tagging(conn, scan_id, summary):
+    for tag, n in sorted(summary["per_tag"].items(), key=lambda kv: (-kv[1], kv[0])):
+        cms_db.add_scan_detail(conn, scan_id, "tag", tag, n)
+    for email_id, why in summary["important"]:
+        cms_db.add_scan_detail(conn, scan_id, "important", None, None, why, email_id)
+    if summary["tagged"] and not summary["llm_used"]:
+        cms_db.add_scan_detail(conn, scan_id, "note", "AnythingLLM", None, "not used: tagged by rules only")
+    if summary["llm_errors"]:
+        cms_db.add_scan_detail(conn, scan_id, "error", "AnythingLLM", summary["llm_errors"], "emails it could not tag")
+
+
+def run_tag_only(args, settings):
+    conn = cms_db.connect(settings)
+    cms_db.ensure_tables(conn)
+    mode = f"retag-{args.retag}" if args.retag else "tag-only"
+    scan_id = cms_db.start_scan_info(conn, args.source, mode)
+    try:
         if args.retag:
             print(f"retag: {cms_db.queue_retag(conn, args.retag)} emails queued ({args.retag})")
-        tagger.tag_new_emails(conn, settings, say=lambda text: print("  " + text))
+        summary = tagger.tag_new_emails(conn, settings, say=say)
+        record_tagging(conn, scan_id, summary)
+        cms_db.finish_scan_info(conn, scan_id, "ok", emails_tagged=summary["tagged"],
+                                important=len(summary["important"]))
+    except Exception as err:
+        cms_db.finish_scan_info(conn, scan_id, "failed", message=f"{type(err).__name__}: {err}")
+        raise
+    finally:
         conn.close()
-        print("tag only: done")
-        return 0
+    print(f"{mode}: done")
+    return 0
+
+
+def run(args, settings):
+    if args.tag_only or args.retag:
+        return run_tag_only(args, settings)
     mailboxes = args.mailbox or settings["mailboxes"]
     days = args.days or settings["days"]
     print(f"scan: {len(mailboxes)} mailbox(es), last {days} day(s)" + (" (dry run)" if args.dry_run else ""))
     conn = None if args.dry_run else cms_db.connect(settings)
+    scan_id = None
     if conn is not None:
         cms_db.ensure_tables(conn)
-    ns = outlook_reader.outlook()
-    failed = 0
-    for name in mailboxes:
-        try:
-            account, rows, skipped, per_folder = outlook_reader.read_mailbox(
-                name, days, ns, say=(lambda text: print("    " + text, flush=True)) if args.verbose else None)
-            folders = ", ".join(f"{path} {count}" for path, count in per_folder if count)
-            print(f"  {account}: {len(rows)} emails ({folders or 'none'}; {skipped} non-email items skipped)")
-            if conn is not None and rows:
-                new, refreshed = cms_db.save_emails(conn, rows)
-                print(f"    saved: {new} new, {refreshed} refreshed")
-        except Exception as err:
-            failed += 1
-            print(f"  {name}: FAILED - {type(err).__name__}: {err}")
-    if conn is not None and not args.no_tag:
-        tagger.tag_new_emails(conn, settings, say=lambda text: print("  " + text))
+        scan_id = cms_db.start_scan_info(conn, args.source, "scan", days, mailboxes, not args.no_tag)
+    failed, read_total, new_total, summary = 0, 0, 0, None
+    try:
+        ns = outlook_reader.outlook()
+        for name in mailboxes:
+            try:
+                account, rows, skipped, per_folder = outlook_reader.read_mailbox(
+                    name, days, ns, say=(lambda text: print("    " + text, flush=True)) if args.verbose else None)
+                folders = ", ".join(f"{path} {count}" for path, count in per_folder if count)
+                print(f"  {account}: {len(rows)} emails ({folders or 'none'}; {skipped} non-email items skipped)")
+                read_total += len(rows)
+                if conn is not None:
+                    new, refreshed = 0, 0
+                    if rows:
+                        for r in rows:
+                            r["scan_id"] = scan_id
+                        new, refreshed = cms_db.save_emails(conn, rows)
+                        print(f"    saved: {new} new, {refreshed} refreshed")
+                    new_total += new
+                    cms_db.add_scan_detail(conn, scan_id, "account", account, new,
+                                           f"{len(rows)} read: {new} new, {refreshed} refreshed")
+            except Exception as err:
+                failed += 1
+                print(f"  {name}: FAILED - {type(err).__name__}: {err}")
+                if conn is not None:
+                    cms_db.add_scan_detail(conn, scan_id, "error", name, None, f"{type(err).__name__}: {err}")
+        if conn is not None and not args.no_tag:
+            summary = tagger.tag_new_emails(conn, settings, say=say)
+            record_tagging(conn, scan_id, summary)
+    except Exception as err:
+        if conn is not None:
+            cms_db.finish_scan_info(conn, scan_id, "failed", read_total, new_total,
+                                    message=f"{type(err).__name__}: {err}")
+            conn.close()
+        raise
     if conn is not None:
+        cms_db.finish_scan_info(conn, scan_id, "failed" if failed else "ok", read_total, new_total,
+                                summary["tagged"] if summary else 0, len(summary["important"]) if summary else 0,
+                                f"{failed} mailbox(es) failed" if failed else "")
         conn.close()
     print("scan: done" + (f", {failed} mailbox(es) failed" if failed else ""))
     return 1 if failed else 0
@@ -70,6 +125,7 @@ def main(argv=None):
                     help="no Outlook: tag again the emails with no tag, or all emails (your own tags are kept)")
     ap.add_argument("--dry-run", action="store_true", help="read and count only, write nothing")
     ap.add_argument("--verbose", action="store_true", help="progress per folder (names and counts only)")
+    ap.add_argument("--source", default="cli", choices=["schedule", "page", "cli"], help="who started this run")
     ap.add_argument("--log", help="append the output to this file (the scheduled task has no window)")
     args = ap.parse_args(argv)
     settings = cms_db.read_settings()

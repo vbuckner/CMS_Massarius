@@ -11,8 +11,9 @@ CMS thoughts for Massarius: an email scanner that stores Outlook mail in a local
 - **Email content stays on this PC.** Never print or read subjects, senders, recipients, bodies, attachment names
   or sender domains into my own output: that would send them to Claude's cloud. Print only counts, structure,
   folder/mailbox names and errors. Analysis of the mail is done by local code or AnythingLLM (local Qwen).
-  To look at the web page in the browser pane, run it on the fake data: `set CMS_DATABASE=cms_db_test` then
-  `python server.py` (the tests fill cms_db_test), and check `/api/info` shows only "Test | Box" before any screenshot.
+  To look at the web page in the browser pane, run a second copy on the fake data next to the user's own server:
+  `CMS_DATABASE=cms_db_test CMS_PORT=8771 python server.py` (the tests fill cms_db_test), open it with
+  preview_start http://127.0.0.1:8771/ and check `/api/info` shows only "Test | Box" before any screenshot.
 - No libraries where they are not needed. Allowed: `MySQLdb` (mysqlclient, MySQL driver) and `pywin32` (Outlook).
   Everything else is the standard library; the web page is plain HTML/CSS/JS with no CDN.
 - MySQL is the local MySQL80 service only (port 3306, started by hand). Never touch the billing databases
@@ -43,6 +44,10 @@ CMS thoughts for Massarius: an email scanner that stores Outlook mail in a local
 - `lookup_tags` tag types + rules (sender_patterns, keyword_patterns: one per line).
 - `email_tags` status auto (the scan's, replaced on re-tag) / manual (the user's) / rejected (the scan may not add
   it again). source rules / llm / user.
+- `scan_info` one row per run (source schedule/page/cli, mode scan/tag-only/retag-*, days, mailboxes, counts,
+  status); `scan_details` its summary rows (kind account / tag / important / note / error). The Emails tab shows
+  the last 14 days of them. `emails.scan_id` = the scan that first stored the email; `important` / `important_why`
+  come from AnythingLLM (NULL = not asked).
 
 ## AnythingLLM
 Installed (desktop), LLM provider is its built-in local runner with Qwen3-8B, API on http://localhost:3001.

@@ -102,10 +102,48 @@ CREATE TABLE IF NOT EXISTS emails (
   entry_id         VARCHAR(512)  NULL,
   store_id         TEXT          NULL,
   tagged_at        DATETIME      NULL,
+  important        TINYINT       NULL COMMENT 'AnythingLLM: 1 = looks important, 0 = not, NULL = not asked',
+  important_why    VARCHAR(255)  NULL,
+  scan_id          INT UNSIGNED  NULL COMMENT 'the scan that first stored this email',
   loaded_at        DATETIME      NOT NULL,
   updated_at       DATETIME      NULL,
   UNIQUE KEY uq_account_message (account, message_id),
-  KEY ix_received (account, received_at)
+  KEY ix_received (account, received_at),
+  KEY ix_scan (scan_id)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci
+"""
+
+SCAN_INFO = """
+CREATE TABLE IF NOT EXISTS scan_info (
+  id            INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  started_at    DATETIME     NOT NULL,
+  finished_at   DATETIME     NULL,
+  source        VARCHAR(20)  NOT NULL COMMENT 'schedule, page or cli',
+  mode          VARCHAR(20)  NOT NULL COMMENT 'scan, tag-only, retag-untagged, retag-all',
+  days          INT          NULL,
+  mailboxes     TEXT         NULL,
+  tagging       TINYINT      NOT NULL DEFAULT 1,
+  status        VARCHAR(20)  NOT NULL DEFAULT 'running' COMMENT 'running, ok, failed',
+  emails_read   INT          NOT NULL DEFAULT 0,
+  emails_new    INT          NOT NULL DEFAULT 0,
+  emails_tagged INT          NOT NULL DEFAULT 0,
+  important     INT          NOT NULL DEFAULT 0,
+  message       VARCHAR(500) NULL,
+  KEY ix_started (started_at)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci
+"""
+
+SCAN_DETAILS = """
+CREATE TABLE IF NOT EXISTS scan_details (
+  id        BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  scan_id   INT UNSIGNED    NOT NULL,
+  kind      VARCHAR(20)     NOT NULL COMMENT 'account, tag, important, error, note',
+  label     VARCHAR(255)    NULL,
+  value     INT             NULL,
+  email_id  BIGINT UNSIGNED NULL,
+  text      VARCHAR(1000)   NULL,
+  KEY ix_scan (scan_id, kind),
+  CONSTRAINT fk_scan_details_scan FOREIGN KEY (scan_id) REFERENCES scan_info (id) ON DELETE CASCADE
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci
 """
 
@@ -177,10 +215,14 @@ def _upgrade_emails(cur):
     cols = _columns(cur, "emails")
     adds = [("sent_on", "DATETIME NULL AFTER folder"), ("entry_id", "VARCHAR(512) NULL AFTER is_read"),
             ("store_id", "TEXT NULL AFTER entry_id"), ("tagged_at", "DATETIME NULL AFTER store_id"),
+            ("important", "TINYINT NULL AFTER tagged_at"), ("important_why", "VARCHAR(255) NULL AFTER important"),
+            ("scan_id", "INT UNSIGNED NULL AFTER important_why"),
             ("updated_at", "DATETIME NULL AFTER loaded_at")]
     for name, spec in adds:
         if name not in cols:
             cur.execute(f"ALTER TABLE emails ADD COLUMN {name} {spec}")
+            if name == "scan_id":
+                cur.execute("ALTER TABLE emails ADD KEY ix_scan (scan_id)")
     cur.execute("SELECT INDEX_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() "
                 "AND TABLE_NAME = 'emails' AND INDEX_NAME = 'uq_mailbox_message'")
     if cur.fetchone():
@@ -190,7 +232,7 @@ def _upgrade_emails(cur):
 def ensure_tables(conn):
     cur = conn.cursor()
     _upgrade_emails(cur)
-    for sql in (EMAILS, LOOKUP_TAGS, EMAIL_TAGS):
+    for sql in (EMAILS, LOOKUP_TAGS, EMAIL_TAGS, SCAN_INFO, SCAN_DETAILS):
         cur.execute(sql)
     cur.execute("SELECT COUNT(*) FROM lookup_tags")
     if cur.fetchone()[0] == 0:
@@ -203,8 +245,8 @@ def ensure_tables(conn):
 
 EMAIL_COLUMNS = ["account", "message_id", "folder", "sent_on", "received_at", "from_name", "from_email",
                  "to_recipients", "cc_recipients", "subject", "body", "attachment_count", "attachment_names",
-                 "conversation_id", "categories", "importance", "is_read", "entry_id", "store_id", "loaded_at"]
-REFRESHED = [c for c in EMAIL_COLUMNS if c not in ("account", "message_id", "loaded_at")]
+                 "conversation_id", "categories", "importance", "is_read", "entry_id", "store_id", "scan_id", "loaded_at"]
+REFRESHED = [c for c in EMAIL_COLUMNS if c not in ("account", "message_id", "loaded_at", "scan_id")]
 
 
 def save_emails(conn, rows):
@@ -222,7 +264,7 @@ def save_emails(conn, rows):
         existing.update(r[0] for r in cur.fetchall())
     sql = (f"INSERT INTO emails ({', '.join(EMAIL_COLUMNS)}) VALUES ({', '.join(['%s'] * len(EMAIL_COLUMNS))}) AS new "
            f"ON DUPLICATE KEY UPDATE {', '.join(f'{c} = new.{c}' for c in REFRESHED)}, updated_at = new.loaded_at")
-    cur.executemany(sql, [[r[c] for c in EMAIL_COLUMNS] for r in rows])
+    cur.executemany(sql, [[r.get(c) for c in EMAIL_COLUMNS] for r in rows])
     conn.commit()
     return len(rows) - len(existing), len(existing)
 
@@ -253,15 +295,71 @@ def emails_to_tag(conn, account=None, limit=5000):
     return [dict(zip(keys, r)) for r in cur.fetchall()]
 
 
-def save_auto_tags(conn, email_id, proposals):
-    """proposals: [(tag_id, source, reason)]. Replaces this email's auto tags; manual and rejected rows stay as they are."""
+def save_auto_tags(conn, email_id, proposals, important=None, important_why=None):
+    """proposals: [(tag_id, source, reason)]. Replaces this email's auto tags; manual and rejected rows stay as they are.
+    important / important_why: AnythingLLM's view (None = not asked, the old value is kept)."""
     cur = conn.cursor()
     cur.execute("DELETE FROM email_tags WHERE email_id = %s AND status = 'auto'", (email_id,))
     for tag_id, source, reason in proposals:
         cur.execute("INSERT IGNORE INTO email_tags (email_id, tag_id, status, source, reason) VALUES (%s, %s, 'auto', %s, %s)",
                     (email_id, tag_id, source, (reason or "")[:255]))
-    cur.execute("UPDATE emails SET tagged_at = NOW() WHERE id = %s", (email_id,))
+    if important is None:
+        cur.execute("UPDATE emails SET tagged_at = NOW() WHERE id = %s", (email_id,))
+    else:
+        cur.execute("UPDATE emails SET tagged_at = NOW(), important = %s, important_why = %s WHERE id = %s",
+                    (1 if important else 0, (important_why or "")[:255], email_id))
     conn.commit()
+
+
+# ---------------------------------------------------------------- scan summaries
+
+def start_scan_info(conn, source, mode, days=None, mailboxes=None, tagging=True):
+    cur = conn.cursor()
+    cur.execute("INSERT INTO scan_info (started_at, source, mode, days, mailboxes, tagging) VALUES (NOW(), %s, %s, %s, %s, %s)",
+                (source[:20], mode[:20], days, "; ".join(mailboxes or []), 1 if tagging else 0))
+    conn.commit()
+    return cur.lastrowid
+
+
+def add_scan_detail(conn, scan_id, kind, label=None, value=None, text=None, email_id=None):
+    cur = conn.cursor()
+    cur.execute("INSERT INTO scan_details (scan_id, kind, label, value, email_id, text) VALUES (%s, %s, %s, %s, %s, %s)",
+                (scan_id, kind, (label or "")[:255] or None, value, email_id, (text or "")[:1000] or None))
+    conn.commit()
+
+
+def finish_scan_info(conn, scan_id, status, emails_read=0, emails_new=0, emails_tagged=0, important=0, message=""):
+    cur = conn.cursor()
+    cur.execute("UPDATE scan_info SET finished_at = NOW(), status = %s, emails_read = %s, emails_new = %s, "
+                "emails_tagged = %s, important = %s, message = %s WHERE id = %s",
+                (status, emails_read, emails_new, emails_tagged, important, (message or "")[:500], scan_id))
+    conn.commit()
+
+
+SCAN_KEYS = ["id", "started_at", "finished_at", "source", "mode", "days", "mailboxes", "tagging", "status",
+             "emails_read", "emails_new", "emails_tagged", "important", "message"]
+
+
+def list_scans(conn, days=14):
+    cur = conn.cursor()
+    cur.execute(f"SELECT {', '.join(SCAN_KEYS)} FROM scan_info WHERE started_at >= NOW() - INTERVAL %s DAY "
+                "ORDER BY started_at DESC", (int(days),))
+    return [dict(zip(SCAN_KEYS, r)) for r in cur.fetchall()]
+
+
+def get_scan(conn, scan_id):
+    cur = conn.cursor()
+    cur.execute(f"SELECT {', '.join(SCAN_KEYS)} FROM scan_info WHERE id = %s", (scan_id,))
+    row = cur.fetchone()
+    if not row:
+        return None
+    scan = dict(zip(SCAN_KEYS, row))
+    cur.execute("SELECT d.kind, d.label, d.value, d.text, d.email_id, e.account, e.received_at, e.from_name, e.subject "
+                "FROM scan_details d LEFT JOIN emails e ON e.id = d.email_id WHERE d.scan_id = %s ORDER BY d.id",
+                (scan_id,))
+    keys = ["kind", "label", "value", "text", "email_id", "account", "received_at", "from_name", "subject"]
+    scan["details"] = [dict(zip(keys, r)) for r in cur.fetchall()]
+    return scan
 
 
 def set_tag(conn, email_id, tag_id, action):
@@ -314,7 +412,9 @@ def list_emails(conn, account="", tag_id="", search="", limit=200, offset=0):
     if account:
         where.append("e.account = %s")
         args.append(account)
-    if tag_id == "none":
+    if tag_id == "important":
+        where.append("e.important = 1")
+    elif tag_id == "none":
         where.append("NOT EXISTS (SELECT 1 FROM email_tags t WHERE t.email_id = e.id AND t.status <> 'rejected')")
     elif tag_id:
         where.append("EXISTS (SELECT 1 FROM email_tags t WHERE t.email_id = e.id AND t.tag_id = %s AND t.status <> 'rejected')")
@@ -325,9 +425,10 @@ def list_emails(conn, account="", tag_id="", search="", limit=200, offset=0):
     cur.execute(f"SELECT COUNT(*) FROM emails e WHERE {' AND '.join(where)}", args)
     total = cur.fetchone()[0]
     cur.execute(f"SELECT e.id, e.account, e.received_at, e.sent_on, e.from_name, e.from_email, e.subject, "
-                f"e.attachment_count, e.folder FROM emails e WHERE {' AND '.join(where)} "
+                f"e.attachment_count, e.folder, e.important, e.important_why FROM emails e WHERE {' AND '.join(where)} "
                 f"ORDER BY e.received_at DESC LIMIT %s OFFSET %s", args + [int(limit), int(offset)])
-    keys = ["id", "account", "received_at", "sent_on", "from_name", "from_email", "subject", "attachment_count", "folder"]
+    keys = ["id", "account", "received_at", "sent_on", "from_name", "from_email", "subject", "attachment_count", "folder",
+            "important", "important_why"]
     rows = [dict(zip(keys, r)) for r in cur.fetchall()]
     tags = tags_for(conn, [r["id"] for r in rows])
     for r in rows:
@@ -353,7 +454,8 @@ def get_email(conn, email_id):
     cur = conn.cursor()
     keys = ["id", "account", "folder", "sent_on", "received_at", "from_name", "from_email", "to_recipients",
             "cc_recipients", "subject", "body", "attachment_count", "attachment_names", "categories", "importance",
-            "is_read", "entry_id", "store_id", "tagged_at", "loaded_at", "updated_at"]
+            "is_read", "entry_id", "store_id", "tagged_at", "important", "important_why", "scan_id", "loaded_at",
+            "updated_at"]
     cur.execute(f"SELECT {', '.join(keys)} FROM emails WHERE id = %s", (email_id,))
     row = cur.fetchone()
     if not row:
