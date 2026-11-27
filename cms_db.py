@@ -142,6 +142,8 @@ CREATE TABLE IF NOT EXISTS scan_details (
   value     INT             NULL,
   email_id  BIGINT UNSIGNED NULL,
   text      VARCHAR(1000)   NULL,
+  fix       VARCHAR(500)    NULL COMMENT 'for errors: what to do about it',
+  trace     TEXT            NULL COMMENT 'for errors: the full error details',
   KEY ix_scan (scan_id, kind),
   CONSTRAINT fk_scan_details_scan FOREIGN KEY (scan_id) REFERENCES scan_info (id) ON DELETE CASCADE
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci
@@ -234,6 +236,10 @@ def ensure_tables(conn):
     _upgrade_emails(cur)
     for sql in (EMAILS, LOOKUP_TAGS, EMAIL_TAGS, SCAN_INFO, SCAN_DETAILS):
         cur.execute(sql)
+    cols = _columns(cur, "scan_details")
+    for name, spec in (("fix", "VARCHAR(500) NULL AFTER text"), ("trace", "TEXT NULL AFTER fix")):
+        if name not in cols:
+            cur.execute(f"ALTER TABLE scan_details ADD COLUMN {name} {spec}")
     cur.execute("SELECT COUNT(*) FROM lookup_tags")
     if cur.fetchone()[0] == 0:
         cur.executemany("INSERT INTO lookup_tags (tag, description, sender_patterns, keyword_patterns, sort_order) "
@@ -321,10 +327,12 @@ def start_scan_info(conn, source, mode, days=None, mailboxes=None, tagging=True)
     return cur.lastrowid
 
 
-def add_scan_detail(conn, scan_id, kind, label=None, value=None, text=None, email_id=None):
+def add_scan_detail(conn, scan_id, kind, label=None, value=None, text=None, email_id=None, fix=None, trace=None):
     cur = conn.cursor()
-    cur.execute("INSERT INTO scan_details (scan_id, kind, label, value, email_id, text) VALUES (%s, %s, %s, %s, %s, %s)",
-                (scan_id, kind, (label or "")[:255] or None, value, email_id, (text or "")[:1000] or None))
+    cur.execute("INSERT INTO scan_details (scan_id, kind, label, value, email_id, text, fix, trace) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                (scan_id, kind, (label or "")[:255] or None, value, email_id, (text or "")[:1000] or None,
+                 (fix or "")[:500] or None, (trace or "")[:60000] or None))
     conn.commit()
 
 
@@ -354,10 +362,10 @@ def get_scan(conn, scan_id):
     if not row:
         return None
     scan = dict(zip(SCAN_KEYS, row))
-    cur.execute("SELECT d.kind, d.label, d.value, d.text, d.email_id, e.account, e.received_at, e.from_name, e.subject "
-                "FROM scan_details d LEFT JOIN emails e ON e.id = d.email_id WHERE d.scan_id = %s ORDER BY d.id",
-                (scan_id,))
-    keys = ["kind", "label", "value", "text", "email_id", "account", "received_at", "from_name", "subject"]
+    cur.execute("SELECT d.kind, d.label, d.value, d.text, d.fix, d.trace, d.email_id, e.account, e.received_at, "
+                "e.from_name, e.subject FROM scan_details d LEFT JOIN emails e ON e.id = d.email_id "
+                "WHERE d.scan_id = %s ORDER BY d.id", (scan_id,))
+    keys = ["kind", "label", "value", "text", "fix", "trace", "email_id", "account", "received_at", "from_name", "subject"]
     scan["details"] = [dict(zip(keys, r)) for r in cur.fetchall()]
     return scan
 

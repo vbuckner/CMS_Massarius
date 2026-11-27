@@ -27,9 +27,10 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import cms_db
+import diagnose
 
 WEB = cms_db.ROOT / "web"
-LOG = cms_db.ROOT / "logs" / "scan.log"
+LOG = Path(os.environ.get("CMS_LOG") or cms_db.ROOT / "logs" / "scan.log")    # CMS_LOG: e.g. a test copy
 _scan = {"proc": None}
 _lock = threading.Lock()
 
@@ -57,11 +58,15 @@ def start_scan(extra_args):
                                          cwd=str(cms_db.ROOT), creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
 
-def log_tail(lines=40):
+def log_tail(since=0, lines=400):
+    """(the last lines written after byte `since`, the log's size). 'Clear log' on the page just moves `since` on."""
     try:
-        return LOG.read_text(encoding="utf-8", errors="replace").splitlines()[-lines:]
+        data = LOG.read_bytes()
     except OSError:
-        return []
+        return [], 0
+    if since > len(data):            # the file was emptied or replaced
+        since = 0
+    return data[since:].decode("utf-8", errors="replace").splitlines()[-lines:], len(data)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -82,8 +87,13 @@ class Handler(BaseHTTPRequestHandler):
     def ok(self, value):
         self.send(200, as_json(value))
 
-    def fail(self, status, message):
-        self.send(status, as_json({"error": message}))
+    def fail(self, status, message, fix=""):
+        self.send(status, as_json({"error": message, "fix": fix}))
+
+    def crash(self, err):
+        """An unexpected error: a short summary and what to do (e.g. MySQL not running -> net start MySQL80)."""
+        info = diagnose.explain(err)
+        self.fail(500, info["summary"], info["fix"])
 
     def body(self):
         length = int(self.headers.get("Content-Length") or 0)
@@ -107,7 +117,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.fail(404, "not found")
             settings = cms_db.read_settings()
             if parts[1:] == ["scan"]:
-                return self.ok({"running": scan_running(), "log": log_tail()})
+                lines, size = log_tail(int(query.get("since", 0) or 0))
+                return self.ok({"running": scan_running(), "log": lines, "size": size})
             conn = cms_db.connect(settings)
             try:
                 cms_db.ensure_tables(conn)
@@ -138,7 +149,7 @@ class Handler(BaseHTTPRequestHandler):
                 conn.close()
             return self.fail(404, "not found")
         except Exception as err:
-            return self.fail(500, f"{type(err).__name__}: {err}")
+            return self.crash(err)
 
     def static(self, name):
         path = (WEB / name).resolve()
@@ -214,7 +225,7 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, KeyError) as err:
             return self.fail(400, str(err))
         except Exception as err:
-            return self.fail(500, f"{type(err).__name__}: {err}")
+            return self.crash(err)
 
 
 def main():

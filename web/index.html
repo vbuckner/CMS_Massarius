@@ -19,14 +19,20 @@
 
 <!-- The tabs only show / hide these sections: nothing is reloaded, so unsaved edits stay when you switch. -->
 <nav class="tabs">
-  <button data-tab="tags">Tags</button>
   <button data-tab="scan">Scan</button>
   <button data-tab="emails" class="active">Emails</button>
+  <button data-tab="settings" class="cog" title="Settings" aria-label="Settings">
+    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65a.5.5 0 0 0 .12-.64l-2-3.46a.5.5 0 0 0-.61-.22l-2.49 1a7.3 7.3 0 0 0-1.69-.98l-.38-2.65A.49.49 0 0 0 14 2h-4a.49.49 0 0 0-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1a.5.5 0 0 0-.61.22l-2 3.46a.49.49 0 0 0 .12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65a.5.5 0 0 0-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46a.5.5 0 0 0-.12-.64l-2.11-1.65zM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7z"/></svg>
+  </button>
 </nav>
 
 <main>
-  <!-- Tags -->
-  <section id="tab-tags" class="tab" hidden>
+  <!-- Settings (cog): its own sub menu; Tags is the first item -->
+  <section id="tab-settings" class="tab" hidden>
+    <nav class="subtabs">
+      <button data-sub="tags" class="active">Tags</button>
+    </nav>
+    <div id="sub-tags" class="subtab">
     <div class="tags-top">
       <p class="muted">The scan tags new emails with these rules, then asks AnythingLLM (local Qwen) to pick from the same list.
         Sender patterns: part of the sender address, one per line. Keywords: looked for in the subject, one per line.</p>
@@ -38,6 +44,7 @@
     </table>
     <p class="legend muted"><span class="swatch saved"></span> saved <span class="swatch dirty"></span> changed, not saved yet</p>
     <button id="t-add" class="add-tag">Add a tag</button>
+    </div>
   </section>
 
   <!-- Scan -->
@@ -54,8 +61,16 @@
         and tags you set or rejected are kept. Each run's summary is on the Emails tab.</p>
     </div>
     <details id="s-logbox" class="logbox" open>
-      <summary>Log <span id="s-state" class="muted"></span></summary>
-      <pre id="s-log" class="log"></pre>
+      <summary>Log
+        <span id="s-spinner" class="rainbow-spinner" hidden title="Scanning...">
+          <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        </span>
+        <span id="s-state" class="muted"></span>
+        <button id="s-clear" class="bin" type="button" title="Clear the log (only this view: the log file is kept)" aria-label="Clear the log">
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2zm-3 6h12l-1 12H7L6 9zm4 2v8h2v-8h-2zm4 0v8h2v-8h-2z"/></svg>
+        </button>
+      </summary>
+      <div id="s-log" class="log"></div>
     </details>
   </section>
 

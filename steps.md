@@ -18,7 +18,7 @@ restrictions
   - To reclassify/tag all emails -- note takes approx 2 hours, may be more (so plug in)
     - python scan.py --retag all --log logs/scan.log
 
-version: v 0.0.4
+version: v 0.0.5
 
 - ✓ info icon
   - ✓ ccs 
@@ -69,19 +69,24 @@ version: v 0.0.4
             - ✓ scrollable
 
     - ✓ Scan
+      - set this as the default open on webpage
       - ✓ pick mailboxes (from config/settings.json), days back, tag the new emails
       - ✓ scan now
       - ✓ tag untagged emails
       - ✓ log of the scans
         - ✓ allow collaspable
-      - button --> clear log
-        - bin icon
+        - add a status
+          - a css circle indication
+          - gradient center at X 75% x Y 75%
+        - gray default
+      - ✓ button --> clear log
+        - ✓ bin icon
 
 
-  - Settings
-    - use a cog icon in a button
-    - right align the button
-    - sub menu item of the Tags
+  - ✓ Settings
+    - ✓ use a cog icon in a button
+    - ✓ right align the button
+    - ✓ sub menu item of the Tags
       - ✓ Tags
         - ✓ edit tag, description, sender patterns, subject keywords, order, active
         - ✓ add a tag
@@ -115,16 +120,21 @@ version: v 0.0.4
           - ✓ summary line(s)/row(s)
         - ✓ not sure how yet, but flag those that sound important to appear in the summary
           - ✓ experiment with anything llm and a request may be.. not too important yet
-        - catch any errors
-          - summarise the error
-            - collapse the error details - clickable to open and see
-            - highlight in red on the log
-          - suggest action(s) to clear up
-            - if mysql isnt runnging - suggest running
-            - if outlook library is erroring, etc
+        - ✓ catch any errors
+          - ✓ summarise the error
+            - ✓ collapse the error details - clickable to open and see
+            - ✓ highlight in red on the log
+          - ✓ suggest action(s) to clear up
+            - ✓ if mysql isnt runnging - suggest running
+            - ✓ if outlook library is erroring, etc
+      - once complete, async refresh the combo list in the emails
+      - status of the scan
+        - running -> orange
+        - ran > passed -> green
+        - ran > errored -> red
 
-    - when scanning, next to log collapsable text -> add an css that is spinning balls that change through the rainbox colours as they circle. 
-      - hide once complete
-      - auto swap to emails tab
-  - Scan -> clear log button
-    - clears the div with the log information
+    - ✓ when scanning, next to log collapsable text -> add an css that is spinning balls that change through the rainbox colours as they circle. 
+      - ✓ hide once complete
+      - ✓ auto swap to emails tab
+  - ✓ Scan -> clear log button
+    - ✓ clears the div with the log information

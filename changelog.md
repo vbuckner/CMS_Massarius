@@ -2,6 +2,18 @@
 
 Newest first. One entry per version (the `version:` line in steps.md).
 
+## v 0.0.5 (2026-11-27)
+- Menu: Scan, Emails on the left; a cog button on the right opens **Settings**, which has its own sub menu
+  (Tags for now - the tag editor moved there).
+- Scan tab: a bin button clears the log view (the log file itself is kept; the page remembers where you cleared).
+  While a scan runs, a spinner of rainbow balls circles next to "Log"; when the run ends it hides and the page
+  jumps to the Emails tab with that run's summary open.
+- Errors are caught and explained (new `diagnose.py`): a red one-line summary, a "What to do" suggestion
+  (e.g. MySQL not running -> `net start MySQL80`; Outlook closed or busy; a missing Python package; a mailbox not
+  open in Outlook; AnythingLLM not answering) and the full details folded away (click to open) - in the log, in the
+  scan summary (`scan_details` gets `fix` and `trace`), and in the page's own error messages.
+- `CMS_LOG` lets a test copy of the page use its own log file.
+
 ## v 0.0.4 (2026-11-27)
 - Menu: order Tags, Scan, Emails (Emails still opens first). Full 3D buttons in light purple with a lighter band
   (gradient leaning 75 degrees from the x axis, about 24 px in from the left; `--tab-angle` / `--tab-band` in

@@ -12,7 +12,9 @@ CMS thoughts for Massarius: an email scanner that stores Outlook mail in a local
   or sender domains into my own output: that would send them to Claude's cloud. Print only counts, structure,
   folder/mailbox names and errors. Analysis of the mail is done by local code or AnythingLLM (local Qwen).
   To look at the web page in the browser pane, run a second copy on the fake data next to the user's own server:
-  `CMS_DATABASE=cms_db_test CMS_PORT=8771 python server.py` (the tests fill cms_db_test), open it with
+  `CMS_DATABASE=cms_db_test CMS_PORT=8771 CMS_LOG=logs/test_scan.log python server.py` (the tests fill
+  cms_db_test; scans started from that copy also go to cms_db_test - never click "Scan now" there, it reads real
+  Outlook mail into the test database; use `--mailbox "No Such Box"` to make a test error), open it with
   preview_start http://127.0.0.1:8771/ and check `/api/info` shows only "Test | Box" before any screenshot.
 - No libraries where they are not needed. Allowed: `MySQLdb` (mysqlclient, MySQL driver) and `pywin32` (Outlook).
   Everything else is the standard library; the web page is plain HTML/CSS/JS with no CDN.
@@ -31,9 +33,13 @@ CMS thoughts for Massarius: an email scanner that stores Outlook mail in a local
 - `cms_db.py` settings, MySQL connection, tables, all queries. `ensure_tables()` creates/upgrades the tables.
 - `outlook_reader.py` reads a mailbox (Inbox + sub folders, Sent Items) with a server-side date filter.
 - `tagger.py` auto tags: rules from lookup_tags, then AnythingLLM (OpenAI-style endpoint of the workspace).
+- `diagnose.py` explain(err) -> summary + fix + details; log_block() writes `!! ERROR:` / `!! FIX:` /
+  `!! DETAILS >>>` ... `!! <<<` lines that the page shows red / folded. Add new known errors there.
 - `scan.py` the command line the scheduled task and the page run (`--days`, `--mailbox`, `--tag-only`, `--dry-run`,
   `--verbose`, `--log`).
-- `server.py` + `web/` the page on http://127.0.0.1:8770 (Emails, Tags, Scan tabs; /open/<id> opens in Outlook).
+- `server.py` + `web/` the page on http://127.0.0.1:8770 (Scan, Emails tabs + cog Settings with a sub menu: Tags;
+  /open/<id> opens in Outlook). The user's own copy runs all day: after changing server.py / cms_db.py / diagnose.py
+  tell them to restart it; web/ changes only need a page refresh (Ctrl+F5).
 - `scripts/schedule_scan.ps1` registers the Windows task "CMS Massarius scan".
 - `tests/test_cms.py` unittest on fake data in cms_db_test: `python -m unittest tests.test_cms -v`.
 - `logs/scan.log` (git-ignored) output of every scan.

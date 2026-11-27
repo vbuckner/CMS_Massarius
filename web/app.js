@@ -21,9 +21,14 @@ async function api(path, body) {
   const opts = body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
   const res = await fetch(path, opts);
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || res.statusText);
+  if (!res.ok) throw new Error((data.error || res.statusText) + (data.fix ? "\n\nWhat to do: " + data.fix : ""));
   return data;
 }
+
+const store = {      // per-browser conveniences (may be unavailable in a private window)
+  get(key, fallback) { try { const v = localStorage.getItem("cms." + key); return v === null ? fallback : v; } catch { return fallback; } },
+  set(key, value) { try { localStorage.setItem("cms." + key, value); } catch { /* ignore */ } },
+};
 
 function short(dt) { return dt ? dt.slice(0, 16) : ""; }
 function showError(err) { alert(err.message || err); }
@@ -46,11 +51,17 @@ document.addEventListener("click", (e) => {      // capture: also closes when a 
 function showTab(name) {
   document.querySelectorAll(".tabs button").forEach((x) => x.classList.toggle("active", x.dataset.tab === name));
   document.querySelectorAll(".tab").forEach((t) => { t.hidden = t.id !== "tab-" + name; });
-  if (name === "tags" && !state.tagsLoaded) loadTags();
+  if (name === "settings" && !state.tagsLoaded) loadTags();
   if (name === "scan") pollScan();
-  if (name === "emails") loadScans();
+  if (name === "emails") return loadScans();
 }
 document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
+
+// Settings sub menu (Tags for now; more items can be added the same way)
+document.querySelectorAll(".subtabs button").forEach((b) => b.addEventListener("click", () => {
+  document.querySelectorAll(".subtabs button").forEach((x) => x.classList.toggle("active", x === b));
+  document.querySelectorAll(".subtab").forEach((s) => { s.hidden = s.id !== "sub-" + b.dataset.sub; });
+}));
 
 // ------------------------------------------------ info + filters
 async function loadInfo() {
@@ -114,8 +125,11 @@ function renderSummary(s) {
         el("td", {}, short(d.received_at)), el("td", {}, d.account || ""), el("td", {}, d.from_name || ""),
         el("td", {}, d.subject || "(no subject)"), el("td", { class: "why" }, d.text || ""))))
         : el("div", { class: "muted" }, "none flagged")],
-    notes.length ? [el("h4", {}, "Notes"), notes.map((d) => el("div", { class: "muted" }, `${d.label}: ${d.text}`))] : null,
-    errors.length ? [el("h4", {}, "Errors"), errors.map((d) => el("div", { class: "error" }, `${d.label}: ${d.text}${d.value ? " (" + d.value + ")" : ""}`))] : null];
+    notes.length ? [el("h4", {}, "Notes"), notes.map((d) => el("div", { class: "muted" }, `${d.label}: ${d.text}${d.fix ? " - " + d.fix : ""}`))] : null,
+    errors.length ? [el("h4", {}, "Errors"), errors.map((d) => el("div", { class: "err-row" },
+      el("div", { class: "error" }, `${d.label}: ${d.text}${d.value ? " (" + d.value + ")" : ""}`),
+      d.fix ? el("div", { class: "fix" }, "What to do: " + d.fix) : null,
+      d.trace ? el("details", {}, el("summary", {}, "details"), el("pre", {}, d.trace)) : null))] : null];
   $("#sum-body").replaceChildren(...parts.flat(3).filter(Boolean));
 }
 
@@ -258,19 +272,52 @@ $("#t-add").addEventListener("click", addTagRow);
 $("#t-add-top").addEventListener("click", addTagRow);
 
 // ------------------------------------------------ scan tab
+// The log: "!! ERROR" / "!! FIX" lines in red, the "!! DETAILS >>> ... !! <<<" block folded away.
+function renderLog(lines) {
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.startsWith("!! ERROR:")) out.push(el("div", { class: "err" }, line.slice(3)));
+    else if (line.startsWith("!! FIX:")) out.push(el("div", { class: "fix" }, "What to do:" + line.slice(7)));
+    else if (line === "!! DETAILS >>>") {
+      const body = [];
+      while (++i < lines.length && lines[i] !== "!! <<<") body.push(lines[i]);
+      out.push(el("details", {}, el("summary", {}, "error details (click to open)"), el("pre", {}, body.join("\n"))));
+    } else out.push(el("div", {}, line || " "));
+  }
+  const box = $("#s-log");
+  box.replaceChildren(...out);
+  box.scrollTop = box.scrollHeight;
+}
+
 let pollTimer = null;
 async function pollScan() {
   clearTimeout(pollTimer);
-  const s = await api("/api/scan").catch(() => null);
+  const s = await api("/api/scan?since=" + Number(store.get("logSince", 0))).catch(() => null);
   if (!s) return;
-  $("#s-log").textContent = s.log.join("\n");
-  $("#s-log").scrollTop = $("#s-log").scrollHeight;
-  $("#s-state").textContent = s.running ? "(running...)" : "";
+  state.logSize = s.size;
+  renderLog(s.log);
+  $("#s-spinner").hidden = !s.running;
+  $("#s-state").textContent = s.running ? "scanning..." : "";
   $("#s-run").disabled = $("#s-tagnow").disabled = s.running;
   if (s.running) pollTimer = setTimeout(pollScan, 1500);
-  else if (state.wasRunning) { loadInfo(); loadScans(); if (state.emailsShown) loadEmails(); }
+  else if (state.wasRunning) scanFinished();
   state.wasRunning = s.running;
 }
+
+async function scanFinished() {
+  loadInfo();
+  if (state.emailsShown) loadEmails();
+  await showTab("emails");                       // jump to the Emails tab and show this run's summary
+  const first = $("#sum-pick").options[1];
+  if (first) { $("#sum-pick").value = first.value; $("#sum-pick").dispatchEvent(new Event("change")); }
+}
+
+$("#s-clear").addEventListener("click", (e) => {
+  e.preventDefault();                            // the button sits in the log's fold-out header
+  store.set("logSince", state.logSize || 0);
+  $("#s-log").replaceChildren();
+});
 $("#s-run").addEventListener("click", async () => {
   const mailboxes = [...document.querySelectorAll("#s-boxes input:checked")].map((i) => i.value);
   try { await api("/api/scan", { mailboxes, days: Number($("#s-days").value), tag: $("#s-tag").checked }); pollScan(); }

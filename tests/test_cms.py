@@ -136,5 +136,21 @@ class CmsTests(unittest.TestCase):
         cms_db.finish_scan_info(self.conn, later, "ok")
 
 
+class DiagnoseTests(unittest.TestCase):
+    def test_explanations(self):
+        import MySQLdb
+        import diagnose
+        down = diagnose.explain(MySQLdb.OperationalError(2003, "Can't connect to MySQL server on 'localhost:3306' (10061)"))
+        self.assertIn("not running", down["summary"])
+        self.assertIn("net start MySQL80", down["fix"])
+        missing = diagnose.explain(ModuleNotFoundError("No module named 'win32com'", name="win32com"))
+        self.assertIn("pywin32", missing["fix"])
+        box = diagnose.explain(LookupError("mailbox 'Nope' is not open in Outlook. Outlook has: A, B"))
+        self.assertEqual(box["summary"], "mailbox 'Nope' is not open in Outlook")
+        info, lines = diagnose.log_block(ValueError("odd"), "test")
+        self.assertEqual(lines[0], "!! ERROR: test: ValueError: odd")
+        self.assertEqual((lines[2], lines[-1]), ("!! DETAILS >>>", "!! <<<"))
+
+
 if __name__ == "__main__":
     unittest.main()

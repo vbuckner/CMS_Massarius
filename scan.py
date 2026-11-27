@@ -21,6 +21,7 @@ from datetime import datetime
 from pathlib import Path
 
 import cms_db
+import diagnose
 import outlook_reader
 import tagger
 
@@ -35,9 +36,22 @@ def record_tagging(conn, scan_id, summary):
     for email_id, why in summary["important"]:
         cms_db.add_scan_detail(conn, scan_id, "important", None, None, why, email_id)
     if summary["tagged"] and not summary["llm_used"]:
-        cms_db.add_scan_detail(conn, scan_id, "note", "AnythingLLM", None, "not used: tagged by rules only")
+        cms_db.add_scan_detail(conn, scan_id, "note", "AnythingLLM", None, "not used: tagged by rules only",
+                               fix="Open AnythingLLM (and check its API key file) so the next scan uses it too.")
     if summary["llm_errors"]:
-        cms_db.add_scan_detail(conn, scan_id, "error", "AnythingLLM", summary["llm_errors"], "emails it could not tag")
+        cms_db.add_scan_detail(conn, scan_id, "error", "AnythingLLM", summary["llm_errors"], "emails it could not tag",
+                               fix="Check AnythingLLM is open; use 'Tag again' or  python scan.py --retag untagged  later.")
+
+
+def record_failure(conn, scan_id, err, context, read_total=0, new_total=0):
+    """Puts a stopped run in scan_info / scan_details (if MySQL itself still answers)."""
+    info = diagnose.explain(err)
+    try:
+        cms_db.add_scan_detail(conn, scan_id, "error", context, None, info["summary"], fix=info["fix"],
+                               trace=info["details"])
+        cms_db.finish_scan_info(conn, scan_id, "failed", read_total, new_total, message=info["summary"])
+    except Exception:
+        pass
 
 
 def run_tag_only(args, settings):
@@ -53,7 +67,7 @@ def run_tag_only(args, settings):
         cms_db.finish_scan_info(conn, scan_id, "ok", emails_tagged=summary["tagged"],
                                 important=len(summary["important"]))
     except Exception as err:
-        cms_db.finish_scan_info(conn, scan_id, "failed", message=f"{type(err).__name__}: {err}")
+        record_failure(conn, scan_id, err, mode)
         raise
     finally:
         conn.close()
@@ -94,16 +108,17 @@ def run(args, settings):
                                            f"{len(rows)} read: {new} new, {refreshed} refreshed")
             except Exception as err:
                 failed += 1
-                print(f"  {name}: FAILED - {type(err).__name__}: {err}")
+                info, lines = diagnose.log_block(err, name)
+                print("\n".join(lines))
                 if conn is not None:
-                    cms_db.add_scan_detail(conn, scan_id, "error", name, None, f"{type(err).__name__}: {err}")
+                    cms_db.add_scan_detail(conn, scan_id, "error", name, None, info["summary"], fix=info["fix"],
+                                           trace=info["details"])
         if conn is not None and not args.no_tag:
             summary = tagger.tag_new_emails(conn, settings, say=say)
             record_tagging(conn, scan_id, summary)
     except Exception as err:
         if conn is not None:
-            cms_db.finish_scan_info(conn, scan_id, "failed", read_total, new_total,
-                                    message=f"{type(err).__name__}: {err}")
+            record_failure(conn, scan_id, err, "scan", read_total, new_total)
             conn.close()
         raise
     if conn is not None:
@@ -130,7 +145,7 @@ def main(argv=None):
     args = ap.parse_args(argv)
     settings = cms_db.read_settings()
     if not args.log:
-        return run(args, settings)
+        return guarded(args, settings)
     log_path = Path(args.log)
     if not log_path.is_absolute():
         log_path = cms_db.ROOT / log_path
@@ -138,12 +153,17 @@ def main(argv=None):
     with open(log_path, "a", encoding="utf-8", buffering=1) as log:
         sys.stdout = sys.stderr = log
         print(f"\n=== {datetime.now():%Y-%m-%d %H:%M:%S} ===")
-        try:
-            return run(args, settings)
-        except BaseException:
-            import traceback
-            traceback.print_exc()
-            return 1
+        return guarded(args, settings)
+
+
+def guarded(args, settings):
+    """Runs the scan; a stop is written as ERROR (summary) / FIX (what to do) / DETAILS (folded on the page)."""
+    try:
+        return run(args, settings)
+    except Exception as err:
+        _info, lines = diagnose.log_block(err, "scan stopped")
+        print("\n".join(lines))
+        return 1
 
 
 if __name__ == "__main__":
